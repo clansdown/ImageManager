@@ -95,3 +95,39 @@ TEST_CASE("image document: clearing drops everything", "[image-document]") {
     REQUIRE_FALSE(document.has_selection());
     REQUIRE(document.source_path().empty());
 }
+
+TEST_CASE("image document: source and display regions map through the rotation",
+          "[image-document]") {
+    ImageDocument document;
+    document.set_source("/tmp/a.png", make_pixbuf(40, 20));
+
+    const ImageRectangle source_region{5, 5, 10, 4};
+    REQUIRE(document.source_size() == ImageSize{40, 20});
+    REQUIRE(document.source_region_to_display(source_region) == source_region);
+
+    document.rotate_clockwise();
+
+    // before = {40, 20}: x = 20 - 5 - 4 = 11, y = 5; width/height swap.
+    const ImageRectangle display_region{11, 5, 4, 10};
+    REQUIRE(document.source_region_to_display(source_region) == display_region);
+    REQUIRE(document.display_region_to_source(display_region) == source_region);
+}
+
+TEST_CASE("image document: commit_rotation bakes the view and rotates regions",
+          "[image-document]") {
+    ImageDocument document;
+    document.set_source("/tmp/a.png", make_pixbuf(40, 20));
+
+    ExportRecord record;
+    record.region = ImageRectangle{5, 5, 10, 4};
+    document.set_exported_regions({record});
+
+    document.rotate_clockwise();
+    document.commit_rotation();
+
+    REQUIRE(document.rotation() == QuarterTurns::None);
+    REQUIRE(document.source_size() == ImageSize{20, 40});
+    REQUIRE(document.display_size() == ImageSize{20, 40});
+    REQUIRE(document.exported_regions().size() == 1);
+    REQUIRE(document.exported_regions()[0].region == ImageRectangle{11, 5, 4, 10});
+}

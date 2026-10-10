@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include <gdkmm/pixbuf.h>
@@ -11,8 +12,10 @@
 #include <sigc++/sigc++.h>
 
 #include "core/export.h"
+#include "core/export_history.h"
 #include "core/geometry.h"
 #include "core/preferences.h"
+#include "io/export_history_store.h"
 #include "io/image_document.h"
 
 namespace imagemgr {
@@ -38,7 +41,10 @@ public:
     ///        Application. Must outlive this controller.
     /// @param parent Window the dialogs are parented to. Must outlive this
     ///        controller.
-    ExportController(Preferences& preferences, Gtk::Window& parent);
+    /// @param history_store Export history to append each successful export to.
+    ///        Must outlive this controller.
+    ExportController(Preferences& preferences, Gtk::Window& parent,
+                     ExportHistoryStore& history_store);
 
     /// Exports document's current selection. Reports and returns quietly when
     /// there is nothing to export.
@@ -49,8 +55,10 @@ public:
     /// button so the target can be changed before exporting.
     void prompt_for_export_directory();
 
-    /// Emitted with the written file's full path after a successful export.
-    sigc::signal<void(const std::string& file_path)>& signal_export_succeeded();
+    /// Emitted with the source image path and the record after a successful
+    /// export, so the window can update the badge and the region overlay.
+    sigc::signal<void(const std::string& source_path, const ExportRecord& record)>&
+    signal_export_succeeded();
 
     /// Emitted with the chosen directory whenever the export target changes,
     /// whether through the export flow or prompt_for_export_directory().
@@ -60,8 +68,11 @@ private:
     // The image data captured when the export is requested, so that an
     // asynchronous folder chooser cannot race a selection change.
     struct PendingExport {
+        std::string source_path;
         Glib::RefPtr<Gdk::Pixbuf> display_pixbuf;
-        ImageRectangle crop_region;
+        ImageRectangle crop_region;      // display (rotated) coordinates
+        ImageRectangle source_region;    // source-image coordinates, for history
+        std::int64_t source_modified_unix_seconds = 0;
         ImageFormat format = ImageFormat::Png;
         int quality = 90;
     };
@@ -85,11 +96,12 @@ private:
 
     Preferences& preferences_;
     Gtk::Window& parent_;
+    ExportHistoryStore& history_store_;
 
     // Cancels a folder chooser that is still open when a new one is requested.
     Glib::RefPtr<Gio::Cancellable> folder_cancellable_;
 
-    sigc::signal<void(const std::string&)> export_succeeded_signal_;
+    sigc::signal<void(const std::string&, const ExportRecord&)> export_succeeded_signal_;
     sigc::signal<void(const std::string&)> export_directory_changed_signal_;
 };
 

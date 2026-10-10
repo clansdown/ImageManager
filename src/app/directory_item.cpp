@@ -9,16 +9,19 @@
 namespace imagemgr {
 
 DirectoryItem::DirectoryItem(std::string path, std::string display_name,
-                             std::int64_t modified_unix_seconds)
+                             std::int64_t modified_unix_seconds, std::size_t export_count)
     : path_(std::move(path)),
       display_name_(std::move(display_name)),
       modified_unix_seconds_(modified_unix_seconds),
-      name_sort_key_(Glib::ustring(display_name_).casefold_collate_key()) {}
+      name_sort_key_(Glib::ustring(display_name_).casefold_collate_key()),
+      export_count_(export_count) {}
 
 Glib::RefPtr<DirectoryItem> DirectoryItem::create(std::string path, std::string display_name,
-                                                  std::int64_t modified_unix_seconds) {
+                                                  std::int64_t modified_unix_seconds,
+                                                  std::size_t export_count) {
     return Glib::make_refptr_for_instance<DirectoryItem>(
-        new DirectoryItem(std::move(path), std::move(display_name), modified_unix_seconds));
+        new DirectoryItem(std::move(path), std::move(display_name), modified_unix_seconds,
+                          export_count));
 }
 
 void DirectoryItem::set_thumbnail(Glib::RefPtr<Gdk::Pixbuf> thumbnail) {
@@ -26,8 +29,20 @@ void DirectoryItem::set_thumbnail(Glib::RefPtr<Gdk::Pixbuf> thumbnail) {
     thumbnail_changed_signal_.emit();
 }
 
+void DirectoryItem::set_export_count(std::size_t count) {
+    if (count == export_count_) {
+        return;
+    }
+    export_count_ = count;
+    export_count_changed_signal_.emit();
+}
+
 sigc::signal<void()>& DirectoryItem::signal_thumbnail_changed() {
     return thumbnail_changed_signal_;
+}
+
+sigc::signal<void()>& DirectoryItem::signal_export_count_changed() {
+    return export_count_changed_signal_;
 }
 
 } // namespace imagemgr

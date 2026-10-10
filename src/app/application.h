@@ -17,6 +17,11 @@ namespace imagemgr {
 /// accelerators, the loaded preferences, and creating the main window on
 /// activation. Exactly one instance is created by main() through create().
 ///
+/// The application is registered as NON_UNIQUE: every invocation is its own
+/// primary instance rather than being routed into an already-running one. Each
+/// process therefore parses its own command line and shows its own directory,
+/// which is what allows several copies to run concurrently.
+///
 /// Thread-safety: Gtk::Application and its overrides run on the main thread
 /// only.
 class Application : public Gtk::Application {

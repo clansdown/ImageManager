@@ -91,4 +91,50 @@ enum class QuarterTurns {
     };
 }
 
+/// The inverse of a rotation state (clockwise <-> counter-clockwise; the rest
+/// are their own inverse).
+[[nodiscard]] constexpr QuarterTurns inverse_quarter_turns(QuarterTurns turns) {
+    switch (turns) {
+    case QuarterTurns::None:
+        return QuarterTurns::None;
+    case QuarterTurns::Clockwise:
+        return QuarterTurns::CounterClockwise;
+    case QuarterTurns::Half:
+        return QuarterTurns::Half;
+    case QuarterTurns::CounterClockwise:
+        return QuarterTurns::Clockwise;
+    }
+    return QuarterTurns::None;
+}
+
+/// Maps a rectangle from an image of size before to the same rectangle after
+/// the image is rotated by turns (clockwise-positive). The result is expressed
+/// in the rotated frame.
+[[nodiscard]] constexpr ImageRectangle rotate_rectangle(ImageRectangle rectangle,
+                                                        ImageSize before, QuarterTurns turns) {
+    int clockwise_steps = 0;
+    switch (turns) {
+    case QuarterTurns::None:
+        clockwise_steps = 0;
+        break;
+    case QuarterTurns::Clockwise:
+        clockwise_steps = 1;
+        break;
+    case QuarterTurns::Half:
+        clockwise_steps = 2;
+        break;
+    case QuarterTurns::CounterClockwise:
+        clockwise_steps = 3;
+        break;
+    }
+
+    ImageRectangle result = rectangle;
+    ImageSize size = before;
+    for (int step = 0; step < clockwise_steps; ++step) {
+        result = rotate_rectangle_clockwise(result, size);
+        size = rotated_size(size, QuarterTurns::Clockwise);
+    }
+    return result;
+}
+
 } // namespace imagemgr

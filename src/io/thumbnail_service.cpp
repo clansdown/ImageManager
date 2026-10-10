@@ -11,6 +11,7 @@
 #include <giomm/file.h>
 #include <glib.h>
 
+#include "io/canonical_path.h"
 #include "io/image_loader.h"
 #include "io/thumbnail_cache.h"
 
@@ -96,7 +97,7 @@ Glib::RefPtr<Gdk::Pixbuf> generate_thumbnail(const ThumbnailCache& cache,
         return decoded ? *decoded : Glib::RefPtr<Gdk::Pixbuf>{};
     }
 
-    const std::string uri = thumbnail_source_uri(path);
+    const std::string uri = canonical_file_uri(path);
     const ThumbnailBucket bucket = bucket_for_thumbnail_size(size);
 
     if (auto cached = cache.load(bucket, uri, metadata->mtime, metadata->file_size)) {
@@ -174,6 +175,26 @@ void ThumbnailService::cancel_all() {
     pending_.clear();
     // completed_ is left for deliver_completed() to drain and discard by
     // generation.
+}
+
+void ThumbnailService::invalidate(const std::string& path) {
+    const std::lock_guard lock(mutex_);
+    // cache_key() is path + '\n' + size, so this prefix matches all sizes.
+    const std::string prefix = path + '\n';
+    for (auto it = cache_.begin(); it != cache_.end();) {
+        if (it->first.starts_with(prefix)) {
+            it = cache_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = pending_.begin(); it != pending_.end();) {
+        if (it->starts_with(prefix)) {
+            it = pending_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void ThumbnailService::worker_loop() {

@@ -18,11 +18,23 @@ namespace {
 // The GTK theme puts a 12px margin and an 8px border-spacing on boxes inside a
 // gridview cell, which wastes a lot of space around each thumbnail. Override
 // both for our cells. The theme's 3px child padding is deliberately left as the
-// inter-cell gap.
+// inter-cell gap. The export badge floats over the thumbnail's top-right corner.
 constexpr auto kApplicationCss = R"(
 .thumbnail-cell {
     margin: 0;
     border-spacing: 0;
+}
+
+.export-badge {
+    background-color: rgba(0, 0, 0, 0.65);
+    color: #ffffff;
+    font-size: 0.75em;
+    font-weight: bold;
+    padding: 1px 5px;
+    border: 1px solid #33e633;
+    border-radius: 9px;
+    box-shadow: 0 0 3px rgba(51, 230, 51, 0.85);
+    margin: 4px;
 }
 )";
 
@@ -42,7 +54,7 @@ void install_application_css() {
 } // namespace
 
 Application::Application()
-    : Gtk::Application("org.imagemanager.ImageManager") {
+    : Gtk::Application("org.imagemanager.ImageManager", Gio::Application::Flags::NON_UNIQUE) {
     register_command_line_options();
 }
 

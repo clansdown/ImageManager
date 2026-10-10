@@ -9,11 +9,11 @@
 #include <utility>
 #include <vector>
 
-#include <giomm/file.h>
 #include <glib.h>
 #include <glibmm/miscutils.h>
 
 #include "core/version.h"
+#include "io/canonical_path.h"
 
 namespace imagemgr {
 
@@ -84,17 +84,6 @@ ThumbnailBucket bucket_for_thumbnail_size(int size) {
     return kThumbnailBuckets.back();
 }
 
-std::string thumbnail_source_uri(const std::string& file_path) {
-    return Gio::File::create_for_path(file_path)->get_uri();
-}
-
-std::string thumbnail_key(const std::string& uri) {
-    gchar* checksum = g_compute_checksum_for_string(G_CHECKSUM_MD5, uri.c_str(), -1);
-    std::string result = checksum != nullptr ? checksum : std::string{};
-    g_free(checksum);
-    return result;
-}
-
 std::string default_thumbnail_cache_root() {
     return Glib::build_filename(g_get_user_cache_dir(), "thumbnails");
 }
@@ -113,7 +102,7 @@ bool ThumbnailCache::contains(const std::string& file_path) const {
 
 std::string ThumbnailCache::file_path_for(ThumbnailBucket bucket, const std::string& uri) const {
     return Glib::build_filename(root_, std::string(bucket.directory_name),
-                                thumbnail_key(uri) + ".png");
+                                md5_hex(uri) + ".png");
 }
 
 std::optional<Glib::RefPtr<Gdk::Pixbuf>> ThumbnailCache::load(ThumbnailBucket bucket,

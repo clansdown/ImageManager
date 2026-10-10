@@ -14,6 +14,10 @@
 #include <sigc++/sigc++.h>
 
 #include "app/image_canvas.h"
+#include "app/rotation_save_service.h"
+#include "core/export_history.h"
+#include "core/rotation.h"
+#include "io/export_history_store.h"
 #include "io/image_document.h"
 #include "io/image_load_service.h"
 
@@ -29,7 +33,9 @@ namespace imagemgr {
 /// Thread-safety: main thread only (a Gtk::Widget).
 class ImagePane : public Gtk::Box {
 public:
-    ImagePane();
+    /// @param history_store Export history read when an image is opened and
+    ///        appended to on a live export. Must outlive this pane.
+    explicit ImagePane(ExportHistoryStore& history_store);
     ~ImagePane() override;
 
     /// Shows display_name in the toolbar, or a placeholder when it is empty.
@@ -66,6 +72,18 @@ public:
     /// target. An empty directory resets it to the generic text.
     void set_export_directory_hint(const std::string& directory);
 
+    /// Records a live export of the currently displayed image so its overlay
+    /// updates immediately. Does nothing when a different image is displayed.
+    void note_exported_region(const std::string& source_path, const ExportRecord& record);
+
+    /// Emitted on the main thread after a rotation has been written to the
+    /// file, with the file path, so the owner can refresh the grid entry.
+    sigc::signal<void(const std::string& path)>& signal_rotation_written();
+
+    /// Emitted on the main thread when writing a rotation failed, with a
+    /// user-presentable message.
+    sigc::signal<void(const std::string& message)>& signal_rotation_failed();
+
     /// The document backing the view; never null.
     [[nodiscard]] const ImageDocument& document() const noexcept { return document_; }
 
@@ -84,6 +102,17 @@ private:
     /// Enables Export only while a region is selected.
     void update_export_sensitivity();
 
+    /// Rotates the view one quarter turn and, for formats that can be written
+    /// losslessly, persists the rotation asynchronously.
+    void request_rotation(bool clockwise);
+
+    /// Receives the result of an asynchronous rotation write.
+    void on_rotation_saved(const std::string& path, QuarterTurns turns,
+                           std::expected<void, Error> result);
+
+    /// Rewrites the persisted export regions to match the committed rotation.
+    void persist_rotated_history(const std::string& path);
+
     Gtk::Label title_label_;
     Gtk::Button rotate_counter_clockwise_button_;
     Gtk::Button rotate_clockwise_button_;
@@ -93,9 +122,14 @@ private:
     Gtk::ScrolledWindow scrolled_window_;
     ImageCanvas canvas_;
     ImageDocument document_;
+    ExportHistoryStore& history_store_;
     std::unique_ptr<ImageLoadService> load_service_;
+    std::unique_ptr<RotationSaveService> rotation_save_service_;
+    bool rotation_save_in_progress_ = false;
     sigc::signal<void()> export_requested_signal_;
     sigc::signal<void()> choose_export_directory_signal_;
+    sigc::signal<void(const std::string&)> rotation_written_signal_;
+    sigc::signal<void(const std::string&)> rotation_failed_signal_;
 };
 
 } // namespace imagemgr

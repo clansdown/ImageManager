@@ -26,6 +26,14 @@ pkg_check_modules(GTKMM4 REQUIRED gtkmm-4.0)
 pkg_check_modules(LIBWEBP REQUIRED libwebp)
 pkg_check_modules(LIBHEIF REQUIRED libheif)
 
+# JSON used for the persistent export history under $XDG_STATE_HOME.
+pkg_check_modules(JSONGLIB REQUIRED json-glib-1.0)
+
+# libexif + libjpeg rewrite a JPEG's EXIF orientation tag without re-encoding
+# the pixels (lossless metadata rotation).
+pkg_check_modules(LIBEXIF REQUIRED libexif)
+pkg_check_modules(LIBJPEG REQUIRED libjpeg)
+
 # Baseline warning set. Applied only to first-party targets (never inherited by
 # fetched third-party code such as Catch2).
 add_library(imagemgr_warnings INTERFACE)
@@ -48,24 +56,34 @@ target_include_directories(imagemgr_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/s
 
 # io: directory scanning, image loading/saving, codecs and preference storage.
 add_library(imagemgr_io STATIC
+    src/io/canonical_path.cpp
     src/io/command_line_options.cpp
     src/io/directory_scanner.cpp
+    src/io/exif_orientation.cpp
+    src/io/export_history_store.cpp
     src/io/export_image.cpp
     src/io/image_document.cpp
     src/io/image_encoder.cpp
     src/io/image_load_service.cpp
     src/io/image_loader.cpp
+    src/io/image_rotation.cpp
     src/io/preferences_store.cpp
     src/io/thumbnail_cache.cpp
     src/io/thumbnail_service.cpp)
 target_link_libraries(imagemgr_io PUBLIC imagemgr_core imagemgr_gtk)
 target_link_libraries(imagemgr_io PRIVATE
     imagemgr_warnings
+    ${JSONGLIB_LIBRARIES}
     ${LIBWEBP_LIBRARIES}
-    ${LIBHEIF_LIBRARIES})
+    ${LIBHEIF_LIBRARIES}
+    ${LIBEXIF_LIBRARIES}
+    ${LIBJPEG_LIBRARIES})
 target_include_directories(imagemgr_io SYSTEM PRIVATE
+    ${JSONGLIB_INCLUDE_DIRS}
     ${LIBWEBP_INCLUDE_DIRS}
-    ${LIBHEIF_INCLUDE_DIRS})
+    ${LIBHEIF_INCLUDE_DIRS}
+    ${LIBEXIF_INCLUDE_DIRS}
+    ${LIBJPEG_INCLUDE_DIRS})
 
 # gtkmm application widgets and wiring.
 add_library(imagemgr_app STATIC
@@ -76,6 +94,7 @@ add_library(imagemgr_app STATIC
     src/app/image_canvas.cpp
     src/app/image_pane.cpp
     src/app/main_window.cpp
+    src/app/rotation_save_service.cpp
     src/app/settings_dialog.cpp
     src/app/thumbnail_cell.cpp
     src/app/toast.cpp)

@@ -10,9 +10,13 @@
 #include <cairomm/context.h>
 #include <gdkmm/cursor.h>
 #include <gdkmm/texture.h>
+#include <glibmm/miscutils.h>
 #include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/gesturedrag.h>
 #include <gtkmm/snapshot.h>
+#include <pangomm/font.h>
+#include <pangomm/fontdescription.h>
+#include <pangomm/layout.h>
 
 #include "io/image_document.h"
 
@@ -25,6 +29,15 @@ constexpr double kHandleRadiusWidgetPixels = 6.0;
 
 // Drawn size of a selection handle, in widget pixels.
 constexpr double kHandleSizeWidgetPixels = 8.0;
+
+// Exported-region overlay, in widget pixels. The translucent fill marks the
+// area, while a bright green border over a dark halo makes it read as an
+// outlined box (rather than a merely lightened patch) on both light and dark
+// images. The label is inset so its backing clears the border.
+constexpr double kExportBorderWidth = 2.0;
+constexpr double kExportBorderHaloWidth = 4.0;
+constexpr double kExportLabelInset = 6.0;
+constexpr double kExportLabelPadding = 3.0;
 
 } // namespace
 
@@ -248,7 +261,17 @@ void ImageCanvas::snapshot_vfunc(const Glib::RefPtr<Gtk::Snapshot>& snapshot) {
         const auto texture = Gdk::Texture::create_for_pixbuf(pixbuf);
         snapshot->append_texture(texture, destination);
     }
+    draw_export_overlay(snapshot);
     draw_selection_overlay(snapshot);
+}
+
+Gdk::Graphene::Rect ImageCanvas::image_rect_to_widget(ImageRectangle rectangle) const {
+    const Gdk::Graphene::Rect destination = image_destination_rect();
+    const double scale = display_scale();
+    return Gdk::Graphene::Rect(static_cast<float>(destination.get_x() + rectangle.x * scale),
+                               static_cast<float>(destination.get_y() + rectangle.y * scale),
+                               static_cast<float>(rectangle.width * scale),
+                               static_cast<float>(rectangle.height * scale));
 }
 
 void ImageCanvas::draw_selection_overlay(const Glib::RefPtr<Gtk::Snapshot>& snapshot) const {
@@ -263,10 +286,11 @@ void ImageCanvas::draw_selection_overlay(const Glib::RefPtr<Gtk::Snapshot>& snap
     }
 
     const ImageRectangle selection = document_->selection();
-    const double left = destination.get_x() + selection.x * scale;
-    const double top = destination.get_y() + selection.y * scale;
-    const double width = selection.width * scale;
-    const double height = selection.height * scale;
+    const Gdk::Graphene::Rect selection_box = image_rect_to_widget(selection);
+    const double left = selection_box.get_x();
+    const double top = selection_box.get_y();
+    const double width = selection_box.get_width();
+    const double height = selection_box.get_height();
 
     const auto context = snapshot->append_cairo(Gdk::Graphene::Rect(
         0.0F, 0.0F, static_cast<float>(get_width()), static_cast<float>(get_height())));
@@ -311,6 +335,88 @@ void ImageCanvas::draw_selection_overlay(const Glib::RefPtr<Gtk::Snapshot>& snap
         context->stroke();
     }
 
+    context->restore();
+}
+
+void ImageCanvas::draw_export_overlay(const Glib::RefPtr<Gtk::Snapshot>& snapshot) const {
+    if (document_ == nullptr || document_->exported_regions().empty()) {
+        return;
+    }
+    const Gdk::Graphene::Rect destination = image_destination_rect();
+    if (destination.get_width() <= 0.0F || destination.get_height() <= 0.0F) {
+        return;
+    }
+
+    // One box per distinct region, keeping the most recent export's file name.
+    std::vector<const ExportRecord*> distinct;
+    for (const ExportRecord& record : document_->exported_regions()) {
+        const auto existing =
+            std::find_if(distinct.begin(), distinct.end(), [&record](const ExportRecord* other) {
+                return other->region == record.region;
+            });
+        if (existing == distinct.end()) {
+            distinct.push_back(&record);
+        } else if (record.exported_unix_seconds >= (*existing)->exported_unix_seconds) {
+            *existing = &record;
+        }
+    }
+
+    const auto context = snapshot->append_cairo(Gdk::Graphene::Rect(
+        0.0F, 0.0F, static_cast<float>(get_width()), static_cast<float>(get_height())));
+    if (!context) {
+        return;
+    }
+
+    context->save();
+    for (const ExportRecord* record : distinct) {
+        // Stored regions are in the file's pixel space; a view-only rotation
+        // (for formats that cannot be written) is applied here for display.
+        const Gdk::Graphene::Rect box =
+            image_rect_to_widget(document_->source_region_to_display(record->region));
+        if (box.get_width() <= 0.0F || box.get_height() <= 0.0F) {
+            continue;
+        }
+
+        // Mostly transparent light-grey fill marking the exported area.
+        context->set_source_rgba(0.85, 0.85, 0.85, 0.25);
+        context->rectangle(box.get_x(), box.get_y(), box.get_width(), box.get_height());
+        context->fill();
+
+        // Distinctive border: a wide dark halo underneath a bright green line,
+        // leaving a thin dark outline around the green so the box reads as an
+        // outline on any image, not just a lightened patch.
+        context->set_source_rgba(0.0, 0.0, 0.0, 0.55);
+        context->set_line_width(kExportBorderHaloWidth);
+        context->rectangle(box.get_x(), box.get_y(), box.get_width(), box.get_height());
+        context->stroke();
+        context->set_source_rgb(0.2, 0.9, 0.2);
+        context->set_line_width(kExportBorderWidth);
+        context->rectangle(box.get_x(), box.get_y(), box.get_width(), box.get_height());
+        context->stroke();
+
+        // The output file name, inset from the border on a dark backing so it
+        // stays readable over a dark image.
+        auto layout = Pango::Layout::create(context);
+        layout->set_text(Glib::path_get_basename(record->output_path));
+        Pango::FontDescription font;
+        font.set_size(9 * Pango::SCALE);
+        layout->set_font_description(font);
+
+        int label_width = 0;
+        int label_height = 0;
+        layout->get_pixel_size(label_width, label_height);
+        const double label_x = box.get_x() + kExportLabelInset;
+        const double label_y = box.get_y() + kExportLabelInset;
+        context->set_source_rgba(0.0, 0.0, 0.0, 0.55);
+        context->rectangle(label_x - kExportLabelPadding, label_y - kExportLabelPadding,
+                           static_cast<double>(label_width) + 2.0 * kExportLabelPadding,
+                           static_cast<double>(label_height) + 2.0 * kExportLabelPadding);
+        context->fill();
+
+        context->set_source_rgba(1.0, 1.0, 1.0, 0.95);
+        context->move_to(label_x, label_y);
+        layout->show_in_cairo_context(context);
+    }
     context->restore();
 }
 

@@ -12,6 +12,7 @@
 
 #include <gdkmm/pixbuf.h>
 
+#include "io/canonical_path.h"
 #include "io/thumbnail_cache.h"
 
 using namespace imagemgr;
@@ -52,17 +53,17 @@ TEST_CASE("thumbnail cache: size buckets follow the standard", "[thumbnail-cache
 
 TEST_CASE("thumbnail cache: keys use the canonical URI", "[thumbnail-cache]") {
     // The standard's own worked example.
-    REQUIRE(thumbnail_source_uri("/home/jens/photos/me.png") ==
+    REQUIRE(canonical_file_uri("/home/jens/photos/me.png") ==
             "file:///home/jens/photos/me.png");
-    REQUIRE(thumbnail_key("file:///home/jens/photos/me.png") ==
+    REQUIRE(md5_hex("file:///home/jens/photos/me.png") ==
             "c6ee772d9e49320e97ec29a7eb5b1697");
 }
 
 TEST_CASE("thumbnail cache: URIs are percent-encoded", "[thumbnail-cache]") {
-    const std::string uri = thumbnail_source_uri("/tmp/a picture.png");
+    const std::string uri = canonical_file_uri("/tmp/a picture.png");
     REQUIRE(uri == "file:///tmp/a%20picture.png");
     // The encoded URI and the raw path must hash differently.
-    REQUIRE(thumbnail_key(uri) != thumbnail_key("file:///tmp/a picture.png"));
+    REQUIRE(md5_hex(uri) != md5_hex("file:///tmp/a picture.png"));
 }
 
 TEST_CASE("thumbnail cache: store then load round-trips", "[thumbnail-cache]") {

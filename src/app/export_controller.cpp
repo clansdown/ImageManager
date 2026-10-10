@@ -3,11 +3,13 @@
 #include "app/export_controller.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <string_view>
 #include <utility>
 
 #include <giomm/file.h>
+#include <giomm/fileinfo.h>
 #include <glib.h>
 #include <glibmm/miscutils.h>
 #include <gtkmm/alertdialog.h>
@@ -18,9 +20,38 @@
 
 namespace imagemgr {
 
-ExportController::ExportController(Preferences& preferences, Gtk::Window& parent)
+namespace {
+
+// A fresh stable identity for an export record, used to address it in future
+// re-export operations.
+std::string new_record_id() {
+    gchar* uuid = g_uuid_string_random();
+    std::string result = uuid != nullptr ? uuid : std::string{};
+    g_free(uuid);
+    return result;
+}
+
+// The source file's modification time in Unix seconds, or 0 when unavailable.
+std::int64_t file_modified_unix_seconds(const std::string& path) {
+    try {
+        const auto info = Gio::File::create_for_path(path)->query_info(
+            "time::modified", Gio::FileQueryInfoFlags::NONE);
+        if (!info) {
+            return 0;
+        }
+        return static_cast<std::int64_t>(info->get_attribute_uint64("time::modified"));
+    } catch (const Glib::Error&) {
+        return 0;
+    }
+}
+
+} // namespace
+
+ExportController::ExportController(Preferences& preferences, Gtk::Window& parent,
+                                   ExportHistoryStore& history_store)
     : preferences_(preferences),
-      parent_(parent) {}
+      parent_(parent),
+      history_store_(history_store) {}
 
 void ExportController::export_selection(const ImageDocument& document) {
     if (!document.has_image()) {
@@ -33,9 +64,14 @@ void ExportController::export_selection(const ImageDocument& document) {
     }
 
     PendingExport pending;
+    pending.source_path = document.source_path();
     pending.display_pixbuf = document.display_pixbuf();
     pending.crop_region = document.selection();
-    pending.format = format_for_source(document.source_path());
+    // History records the region in the file's pixel space; a transient
+    // view-only rotation (for formats that cannot be written) is undone here.
+    pending.source_region = document.display_region_to_source(document.selection());
+    pending.source_modified_unix_seconds = file_modified_unix_seconds(pending.source_path);
+    pending.format = format_for_source(pending.source_path);
     pending.quality = preferences_.default_export_quality;
 
     if (!preferences_.last_export_directory.empty()) {
@@ -111,7 +147,22 @@ void ExportController::perform_export(PendingExport pending, const std::string& 
     }
 
     remember_export_directory(directory);
-    export_succeeded_signal_.emit(*result);
+
+    ExportRecord record;
+    record.id = new_record_id();
+    record.region = pending.source_region;
+    record.output_path = *result;
+    record.format = pending.format;
+    record.exported_unix_seconds = g_get_real_time() / G_USEC_PER_SEC;
+
+    const auto stored = history_store_.append(pending.source_path,
+                                              pending.source_modified_unix_seconds, record);
+    if (!stored) {
+        // History is best-effort: the file was written, so still report success.
+        g_warning("could not record export history: %s", stored.error().message.c_str());
+    }
+
+    export_succeeded_signal_.emit(pending.source_path, record);
 }
 
 void ExportController::remember_export_directory(const std::string& directory) {
@@ -130,7 +181,8 @@ void ExportController::report_error(const std::string& message) const {
     dialog->show(parent_);
 }
 
-sigc::signal<void(const std::string&)>& ExportController::signal_export_succeeded() {
+sigc::signal<void(const std::string&, const ExportRecord&)>&
+ExportController::signal_export_succeeded() {
     return export_succeeded_signal_;
 }
 

@@ -14,6 +14,7 @@
 #include <gtkmm/box.h>
 #include <gtkmm/dropdown.h>
 #include <gtkmm/gridview.h>
+#include <gtkmm/label.h>
 #include <gtkmm/listitemfactory.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/singleselection.h>
@@ -23,6 +24,7 @@
 #include "app/directory_item.h"
 #include "core/preferences.h"
 #include "core/sort_order.h"
+#include "io/export_history_store.h"
 #include "io/thumbnail_service.h"
 
 namespace imagemgr {
@@ -44,7 +46,9 @@ public:
     /// @param preferences Process-lifetime preferences owned by the
     ///        Application. Must outlive this pane. Thumbnail size and filename
     ///        visibility are read from it.
-    explicit DirectoryPane(Preferences& preferences);
+    /// @param history_store Export history consulted for each file's export
+    ///        count. Must outlive this pane.
+    explicit DirectoryPane(Preferences& preferences, ExportHistoryStore& history_store);
     ~DirectoryPane() override;
 
     /// Starts showing the image files in directory_path. Any previous scan is
@@ -64,9 +68,50 @@ public:
     /// it. The grid is reordered before the signal fires.
     sigc::signal<void(SortOrder)>& signal_sort_order_changed();
 
+    /// Emitted on the main thread whenever the shown directory changes: the
+    /// initial load, a newly chosen directory, or an internal reload. The
+    /// argument is the directory path as passed to load_directory().
+    sigc::signal<void(const std::string& directory_path)>& signal_directory_changed();
+
+    /// Refreshes the export-count badge for source_path after a successful
+    /// export. Does nothing when the file is not currently listed.
+    void note_export(const std::string& source_path);
+
+    /// Refreshes the grid entry for path after its file changed on disk (e.g. a
+    /// rotation was written out): updates its mtime, regenerates its thumbnail
+    /// and re-sorts if the order depends on mtime. Does nothing when the file is
+    /// not currently listed.
+    void note_file_changed(const std::string& path);
+
+    /// Selects the next image in list order (clamped at the end). The usual
+    /// signal_image_selected() loads it.
+    void select_next();
+
+    /// Selects the previous image in list order (clamped at the start).
+    void select_previous();
+
+    /// Selects the first image in the list.
+    void select_first();
+
+    /// Selects the last image in the list.
+    void select_last();
+
 private:
     void build_ui();
     Glib::RefPtr<Gtk::ListItemFactory> create_cell_factory();
+
+    /// Moves the selection by delta positions, stopping at the list bounds.
+    void move_selection(int delta);
+
+    /// Selects position and, when scroll_to_item is set, scrolls it into view.
+    void set_selected_index(guint position, bool scroll_to_item);
+
+    /// Selects the remembered image (pending_selection_path_) if it is still
+    /// listed, otherwise the first item. Does not scroll.
+    void select_restored_or_first();
+
+    /// Resets the list's vertical scroll to the top.
+    void scroll_list_to_top();
 
     // Asynchronous directory enumeration (Gio). generation guards against
     // callbacks from a scan that has since been superseded.
@@ -87,11 +132,14 @@ private:
     void on_sort_order_selected();
 
     Preferences& preferences_;
+    ExportHistoryStore& history_store_;
     int thumbnail_size_ = 128;
     bool show_filenames_ = true;
     SortOrder sort_order_ = SortOrder::NameAscending;
 
     std::string current_directory_;
+    std::string pending_selection_path_;
+    bool scroll_reset_pending_ = false;
     Glib::RefPtr<Gio::File> current_directory_file_;
     Glib::RefPtr<Gio::FileEnumerator> current_enumerator_;
     Glib::RefPtr<Gio::FileMonitor> current_monitor_;
@@ -105,9 +153,11 @@ private:
 
     Gtk::ScrolledWindow scrolled_window_;
     Gtk::GridView grid_view_;
+    Gtk::Label directory_name_label_;
     Gtk::DropDown sort_dropdown_;
     sigc::signal<void(const std::string&)> image_selected_signal_;
     sigc::signal<void(SortOrder)> sort_order_changed_signal_;
+    sigc::signal<void(const std::string&)> directory_changed_signal_;
 };
 
 } // namespace imagemgr

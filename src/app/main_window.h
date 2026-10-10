@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <gtkmm/applicationwindow.h>
 #include <gtkmm/overlay.h>
@@ -15,6 +16,7 @@
 #include "app/toast.h"
 #include "core/command_line_options.h"
 #include "core/preferences.h"
+#include "io/export_history_store.h"
 
 namespace imagemgr {
 
@@ -47,6 +49,11 @@ private:
     /// pane.
     void on_open_directory();
 
+    /// Updates the window title to name the directory the pane is showing,
+    /// collapsing a leading home directory to "~". An empty path restores the
+    /// plain application name.
+    void on_directory_changed(const std::string& directory_path);
+
     /// Receives edited preferences from the settings dialog, stores them and
     /// persists them.
     void on_preferences_saved(const Preferences& preferences);
@@ -63,6 +70,10 @@ private:
     void show_toast(const Glib::ustring& message);
 
     Preferences& preferences_;
+
+    // Persistent per-source export history, shared by the panes and the export
+    // controller. Declared before them so it outlives their references.
+    ExportHistoryStore export_history_store_;
 
     // Left pane stays its preferred width; the image pane absorbs any extra
     // space when the window is resized.

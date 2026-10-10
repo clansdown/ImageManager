@@ -3,6 +3,7 @@
 #include "app/thumbnail_cell.h"
 
 #include <algorithm>
+#include <string>
 
 namespace imagemgr {
 
@@ -17,13 +18,21 @@ ThumbnailCell::ThumbnailCell()
 
     thumbnail_image_.set_size_request(thumbnail_size_, thumbnail_size_);
 
+    // The export-count badge floats over the thumbnail's bottom-right corner.
+    export_badge_.add_css_class("export-badge");
+    export_badge_.set_halign(Gtk::Align::END);
+    export_badge_.set_valign(Gtk::Align::END);
+    export_badge_.set_visible(false);
+    thumbnail_overlay_.set_child(thumbnail_image_);
+    thumbnail_overlay_.add_overlay(export_badge_);
+
+    // A single line, ellipsized to whatever width the cell is given. The grid
+    // is a single column, so a long name truncates to the pane width rather
+    // than widening the list.
     name_label_.set_justify(Gtk::Justification::CENTER);
     name_label_.set_ellipsize(Pango::EllipsizeMode::END);
-    name_label_.set_max_width_chars(16);
-    name_label_.set_wrap(true);
-    name_label_.set_wrap_mode(Pango::WrapMode::WORD_CHAR);
 
-    append(thumbnail_image_);
+    append(thumbnail_overlay_);
     append(name_label_);
 }
 
@@ -54,18 +63,32 @@ void ThumbnailCell::set_show_name(bool show) {
     name_label_.set_visible(show);
 }
 
+void ThumbnailCell::set_export_count(std::size_t count) {
+    if (count == 0) {
+        export_badge_.set_visible(false);
+        return;
+    }
+    export_badge_.set_text(std::to_string(count));
+    export_badge_.set_visible(true);
+}
+
 void ThumbnailCell::observe_item(const Glib::RefPtr<DirectoryItem>& item) {
     thumbnail_connection_.disconnect();
+    export_count_connection_.disconnect();
     observed_item_ = item;
     if (item) {
         thumbnail_connection_ =
             item->signal_thumbnail_changed().connect([this] { refresh_thumbnail_from_item(); });
+        export_count_connection_ = item->signal_export_count_changed().connect(
+            [this] { refresh_export_badge_from_item(); });
     }
     refresh_thumbnail_from_item();
+    refresh_export_badge_from_item();
 }
 
 void ThumbnailCell::clear_item() {
     thumbnail_connection_.disconnect();
+    export_count_connection_.disconnect();
     observed_item_.reset();
 }
 
@@ -75,6 +98,10 @@ void ThumbnailCell::refresh_thumbnail_from_item() {
     } else {
         show_missing_thumbnail();
     }
+}
+
+void ThumbnailCell::refresh_export_badge_from_item() {
+    set_export_count(observed_item_ ? observed_item_->export_count() : 0);
 }
 
 } // namespace imagemgr

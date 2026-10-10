@@ -63,6 +63,9 @@ private:
     /// The grab radius (in image pixels) used when hit-testing handles.
     [[nodiscard]] double handle_radius_image_pixels() const;
 
+    /// The widget-coordinate rectangle the given image rectangle occupies.
+    [[nodiscard]] Gdk::Graphene::Rect image_rect_to_widget(ImageRectangle rectangle) const;
+
     void on_drag_begin(double start_x, double start_y);
     void on_drag_update(double offset_x, double offset_y);
     void on_drag_end();
@@ -72,6 +75,10 @@ private:
 
     /// Draws the dashed selection outline and its eight handles.
     void draw_selection_overlay(const Glib::RefPtr<Gtk::Snapshot>& snapshot) const;
+
+    /// Draws a translucent box over each distinct exported region, labelled with
+    /// the most recent output file name. Drawn under the selection overlay.
+    void draw_export_overlay(const Glib::RefPtr<Gtk::Snapshot>& snapshot) const;
 
     ImageDocument* document_ = nullptr;
     bool selection_tool_active_ = false;

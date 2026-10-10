@@ -7,10 +7,12 @@
 #include <glib.h>
 #include <glibmm/miscutils.h>
 #include <gtkmm/button.h>
+#include <gtkmm/editable.h>
 #include <gtkmm/eventcontrollerkey.h>
 #include <gtkmm/filedialog.h>
 #include <gtkmm/headerbar.h>
 
+#include "core/path_display.h"
 #include "io/preferences_store.h"
 
 namespace imagemgr {
@@ -21,11 +23,19 @@ namespace {
 constexpr int kDefaultWindowWidth = 1200;
 constexpr int kDefaultWindowHeight = 800;
 
+// True when the focused widget accepts text, in which case navigation keys must
+// be left for typing rather than moving the image selection.
+bool text_entry_focused(Gtk::Window& window) {
+    Gtk::Widget* focus = window.get_focus();
+    return focus != nullptr && dynamic_cast<Gtk::Editable*>(focus) != nullptr;
+}
+
 } // namespace
 
 MainWindow::MainWindow(Preferences& preferences, const CommandLineOptions& command_line_options)
     : preferences_(preferences),
-      directory_pane_(preferences) {
+      directory_pane_(preferences, export_history_store_),
+      image_pane_(export_history_store_) {
     set_title("ImageManager");
 
     if (preferences_.window_width > 0 && preferences_.window_height > 0) {
@@ -63,7 +73,8 @@ MainWindow::MainWindow(Preferences& preferences, const CommandLineOptions& comma
         image_pane_.load_image(path);
     });
 
-    export_controller_ = std::make_unique<ExportController>(preferences_, *this);
+    export_controller_ = std::make_unique<ExportController>(preferences_, *this,
+                                                            export_history_store_);
     image_pane_.signal_export_requested().connect(
         [this] { export_controller_->export_selection(image_pane_.document()); });
     image_pane_.signal_choose_export_directory().connect(
@@ -72,14 +83,26 @@ MainWindow::MainWindow(Preferences& preferences, const CommandLineOptions& comma
 
     // A successful export is a transient overlay, not a blocking dialog.
     export_controller_->signal_export_succeeded().connect(
-        [this](const std::string& file_path) {
-            show_toast("Exported " + Glib::path_get_basename(file_path));
+        [this](const std::string& source_path, const ExportRecord& record) {
+            show_toast("Exported " + Glib::path_get_basename(record.output_path));
+            directory_pane_.note_export(source_path);
+            image_pane_.note_exported_region(source_path, record);
         });
     export_controller_->signal_export_directory_changed().connect(
         [this](const std::string& directory) {
             image_pane_.set_export_directory_hint(directory);
             show_toast("Exports go to " + directory);
         });
+
+    // A written rotation refreshes the grid entry (mtime + thumbnail); a failed
+    // one is reported without blocking.
+    image_pane_.signal_rotation_written().connect([this](const std::string& path) {
+        directory_pane_.note_file_changed(path);
+        show_toast("Rotated " + Glib::path_get_basename(path));
+    });
+    image_pane_.signal_rotation_failed().connect([this](const std::string& message) {
+        show_toast("Could not rotate: " + message);
+    });
 
     // The sort order is owned by the directory pane; persist changes here.
     directory_pane_.signal_sort_order_changed().connect([this](SortOrder order) {
@@ -89,6 +112,10 @@ MainWindow::MainWindow(Preferences& preferences, const CommandLineOptions& comma
             g_warning("could not save preferences: %s", saved.error().message.c_str());
         }
     });
+
+    // The window title names the directory the pane is showing.
+    directory_pane_.signal_directory_changed().connect(
+        [this](const std::string& directory_path) { on_directory_changed(directory_path); });
 
     if (command_line_options.initial_directory) {
         directory_pane_.load_directory(*command_line_options.initial_directory);
@@ -127,6 +154,29 @@ MainWindow::MainWindow(Preferences& preferences, const CommandLineOptions& comma
             if (keyval == GDK_KEY_bracketright && !control_pressed) {
                 image_pane_.rotate_clockwise();
                 return true;
+            }
+            // Left/n/BackSpace and Right/p/Space step through the directory
+            // list (stopping at the ends); Home/End jump to the ends. Skipped
+            // while a text entry has focus so typing is never hijacked.
+            if (!control_pressed && !text_entry_focused(*this)) {
+                if (keyval == GDK_KEY_Left || keyval == GDK_KEY_n ||
+                    keyval == GDK_KEY_BackSpace) {
+                    directory_pane_.select_previous();
+                    return true;
+                }
+                if (keyval == GDK_KEY_Right || keyval == GDK_KEY_p ||
+                    keyval == GDK_KEY_space) {
+                    directory_pane_.select_next();
+                    return true;
+                }
+                if (keyval == GDK_KEY_Home) {
+                    directory_pane_.select_first();
+                    return true;
+                }
+                if (keyval == GDK_KEY_End) {
+                    directory_pane_.select_last();
+                    return true;
+                }
             }
             // S toggles the selection tool; Esc clears the selection.
             if (keyval == GDK_KEY_s && !control_pressed) {
@@ -178,6 +228,16 @@ void MainWindow::on_open_directory() {
                                   directory_pane_.load_directory(directory);
                               }
                           });
+}
+
+void MainWindow::on_directory_changed(const std::string& directory_path) {
+    if (directory_path.empty()) {
+        set_title("ImageManager");
+        return;
+    }
+    const std::string abbreviated =
+        abbreviate_home_directory(directory_path, Glib::get_home_dir());
+    set_title(Glib::ustring("ImageManager — ") + Glib::ustring(abbreviated));
 }
 
 void MainWindow::on_preferences_saved(const Preferences& preferences) {

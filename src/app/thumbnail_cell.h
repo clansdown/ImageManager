@@ -2,11 +2,14 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include <gdkmm/pixbuf.h>
 #include <glibmm/refptr.h>
 #include <gtkmm/box.h>
 #include <gtkmm/image.h>
 #include <gtkmm/label.h>
+#include <gtkmm/overlay.h>
 #include <sigc++/sigc++.h>
 
 #include "app/directory_item.h"
@@ -44,6 +47,9 @@ public:
     /// Shows or hides the file name (Preferences::show_filenames_in_list).
     void set_show_name(bool show);
 
+    /// Shows the export-count badge; hides it when count is zero.
+    void set_export_count(std::size_t count);
+
     /// Binds this cell to item and repaints from its current thumbnail. Drops
     /// any previous observation first. Call from the factory's bind handler.
     void observe_item(const Glib::RefPtr<DirectoryItem>& item);
@@ -55,11 +61,17 @@ private:
     /// Repaints the thumbnail (or placeholder) from the observed item.
     void refresh_thumbnail_from_item();
 
+    /// Repaints the export-count badge from the observed item.
+    void refresh_export_badge_from_item();
+
+    Gtk::Overlay thumbnail_overlay_;
     Gtk::Image thumbnail_image_;
+    Gtk::Label export_badge_;
     Gtk::Label name_label_;
     int thumbnail_size_ = 128;
     Glib::RefPtr<DirectoryItem> observed_item_;
     sigc::connection thumbnail_connection_;
+    sigc::connection export_count_connection_;
 };
 
 } // namespace imagemgr

@@ -3,10 +3,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <gdkmm/pixbuf.h>
 #include <glibmm/refptr.h>
 
+#include "core/export_history.h"
 #include "core/geometry.h"
 #include "core/rotation.h"
 
@@ -47,6 +49,17 @@ public:
     /// Size in pixels of the display (rotated) image; zero when there is none.
     [[nodiscard]] ImageSize display_size() const noexcept;
 
+    /// Size in pixels of the unrotated source image; zero when there is none.
+    [[nodiscard]] ImageSize source_size() const noexcept;
+
+    /// Maps a rectangle in the source (unrotated) pixel space to the current
+    /// display (rotated) space.
+    [[nodiscard]] ImageRectangle source_region_to_display(ImageRectangle source_region) const;
+
+    /// Maps a rectangle in the current display space back to the source pixel
+    /// space.
+    [[nodiscard]] ImageRectangle display_region_to_source(ImageRectangle display_region) const;
+
     [[nodiscard]] QuarterTurns rotation() const noexcept { return rotation_; }
 
     /// Rotates the display 90 degrees; the selection turns with it.
@@ -57,6 +70,12 @@ public:
 
     /// Returns to the unrotated source, rotating the selection back with it.
     void reset_rotation();
+
+    /// Bakes the current display rotation into the source: the display becomes
+    /// the source, the rotation resets to none, and the recorded export regions
+    /// are rotated into the new frame. Call after a rotation has been written
+    /// out to the file.
+    void commit_rotation();
 
     [[nodiscard]] bool has_selection() const noexcept { return has_selection_; }
 
@@ -69,6 +88,18 @@ public:
 
     void clear_selection();
 
+    /// Replaces the recorded exports for this image, e.g. after loading the
+    /// persistent history when the image is opened.
+    void set_exported_regions(std::vector<ExportRecord> regions);
+
+    /// Records one more export of this image (a live export) for the overlay.
+    void add_exported_region(ExportRecord region);
+
+    /// The recorded exports, in the order they were recorded.
+    [[nodiscard]] const std::vector<ExportRecord>& exported_regions() const noexcept {
+        return exported_regions_;
+    }
+
 private:
     /// Recomputes display_pixbuf_ from source_pixbuf_ and rotation_.
     void rebuild_display_pixbuf();
@@ -79,6 +110,7 @@ private:
     QuarterTurns rotation_ = QuarterTurns::None;
     ImageRectangle selection_{};
     bool has_selection_ = false;
+    std::vector<ExportRecord> exported_regions_;
 };
 
 } // namespace imagemgr

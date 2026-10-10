@@ -22,6 +22,7 @@ add_executable(imagemgr_tests
     directory_scanner_test.cpp
     image_loader_test.cpp
     geometry_test.cpp
+    path_display_test.cpp
     rotation_test.cpp
     image_document_test.cpp
     selection_test.cpp
@@ -29,6 +30,10 @@ add_executable(imagemgr_tests
     sort_order_test.cpp
     image_encoder_test.cpp
     export_image_test.cpp
+    export_history_store_test.cpp
+    exif_orientation_test.cpp
+    image_rotation_test.cpp
+    orientation_test.cpp
     thumbnail_cache_test.cpp)
 target_link_libraries(imagemgr_tests PRIVATE
     Catch2::Catch2

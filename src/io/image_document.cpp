@@ -13,6 +13,7 @@ void ImageDocument::set_source(std::string source_path,
     rotation_ = QuarterTurns::None;
     selection_ = ImageRectangle{};
     has_selection_ = false;
+    exported_regions_.clear();
     rebuild_display_pixbuf();
 }
 
@@ -23,6 +24,7 @@ void ImageDocument::clear() {
     rotation_ = QuarterTurns::None;
     selection_ = ImageRectangle{};
     has_selection_ = false;
+    exported_regions_.clear();
 }
 
 ImageSize ImageDocument::display_size() const noexcept {
@@ -31,6 +33,28 @@ ImageSize ImageDocument::display_size() const noexcept {
     }
     return ImageSize{.width = display_pixbuf_->get_width(),
                      .height = display_pixbuf_->get_height()};
+}
+
+ImageSize ImageDocument::source_size() const noexcept {
+    if (source_pixbuf_ == nullptr) {
+        return ImageSize{};
+    }
+    return ImageSize{.width = source_pixbuf_->get_width(),
+                     .height = source_pixbuf_->get_height()};
+}
+
+ImageRectangle ImageDocument::source_region_to_display(ImageRectangle source_region) const {
+    if (rotation_ == QuarterTurns::None) {
+        return source_region;
+    }
+    return rotate_rectangle(source_region, source_size(), rotation_);
+}
+
+ImageRectangle ImageDocument::display_region_to_source(ImageRectangle display_region) const {
+    if (rotation_ == QuarterTurns::None) {
+        return display_region;
+    }
+    return rotate_rectangle(display_region, display_size(), inverse_quarter_turns(rotation_));
 }
 
 void ImageDocument::rotate_clockwise() {
@@ -65,6 +89,20 @@ void ImageDocument::reset_rotation() {
     }
 }
 
+void ImageDocument::commit_rotation() {
+    if (!has_image() || rotation_ == QuarterTurns::None) {
+        return;
+    }
+    const ImageSize before = source_size();
+    const QuarterTurns turns = rotation_;
+    for (ExportRecord& record : exported_regions_) {
+        record.region = rotate_rectangle(record.region, before, turns);
+    }
+    source_pixbuf_ = display_pixbuf_;
+    rotation_ = QuarterTurns::None;
+    rebuild_display_pixbuf();
+}
+
 void ImageDocument::set_selection(ImageRectangle selection) {
     selection_ = clamp_rectangle(selection, display_size());
     has_selection_ = selection_.width > 0 && selection_.height > 0;
@@ -73,6 +111,14 @@ void ImageDocument::set_selection(ImageRectangle selection) {
 void ImageDocument::clear_selection() {
     selection_ = ImageRectangle{};
     has_selection_ = false;
+}
+
+void ImageDocument::set_exported_regions(std::vector<ExportRecord> regions) {
+    exported_regions_ = std::move(regions);
+}
+
+void ImageDocument::add_exported_region(ExportRecord region) {
+    exported_regions_.push_back(std::move(region));
 }
 
 void ImageDocument::rebuild_display_pixbuf() {

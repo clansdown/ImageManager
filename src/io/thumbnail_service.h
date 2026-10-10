@@ -61,6 +61,11 @@ public:
     /// this call. The cache is retained.
     void cancel_all();
 
+    /// Drops the in-memory cached thumbnails and any pending requests for path
+    /// (all sizes), so the next request regenerates them. Used after the file
+    /// changes (e.g. a rotation is written out). Must run on the main thread.
+    void invalidate(const std::string& path);
+
 private:
     struct Request {
         std::string path;

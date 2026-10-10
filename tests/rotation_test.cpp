@@ -48,3 +48,27 @@ TEST_CASE("rotation: clockwise then counter-clockwise is the identity", "[rotati
 
     REQUIRE(rotate_rectangle_counter_clockwise(rotated, after) == rectangle);
 }
+
+TEST_CASE("rotation: rotate_rectangle composes quarter turns", "[rotation]") {
+    const ImageSize size{100, 50};
+    const ImageRectangle rectangle{5, 7, 10, 20};
+
+    REQUIRE(rotate_rectangle(rectangle, size, QuarterTurns::None) == rectangle);
+
+    const ImageRectangle clockwise = rotate_rectangle_clockwise(rectangle, size);
+    REQUIRE(rotate_rectangle(rectangle, size, QuarterTurns::Clockwise) == clockwise);
+
+    const ImageSize after_clockwise = rotated_size(size, QuarterTurns::Clockwise);
+    const ImageRectangle half = rotate_rectangle_clockwise(clockwise, after_clockwise);
+    REQUIRE(rotate_rectangle(rectangle, size, QuarterTurns::Half) == half);
+
+    REQUIRE(rotate_rectangle(clockwise, after_clockwise, QuarterTurns::CounterClockwise) ==
+            rectangle);
+}
+
+TEST_CASE("rotation: inverse_quarter_turns inverts the state", "[rotation]") {
+    REQUIRE(inverse_quarter_turns(QuarterTurns::None) == QuarterTurns::None);
+    REQUIRE(inverse_quarter_turns(QuarterTurns::Half) == QuarterTurns::Half);
+    REQUIRE(inverse_quarter_turns(QuarterTurns::Clockwise) == QuarterTurns::CounterClockwise);
+    REQUIRE(inverse_quarter_turns(QuarterTurns::CounterClockwise) == QuarterTurns::Clockwise);
+}

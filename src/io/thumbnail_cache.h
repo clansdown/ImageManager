@@ -23,14 +23,6 @@ struct ThumbnailBucket {
 /// fits, clamped to xx-large for sizes beyond 1024.
 [[nodiscard]] ThumbnailBucket bucket_for_thumbnail_size(int size);
 
-/// The canonical file: URI used as the cache key for a local path. The standard
-/// hashes this exact string, so it must be the canonical (percent-encoded) form
-/// that Gio produces.
-[[nodiscard]] std::string thumbnail_source_uri(const std::string& file_path);
-
-/// Lowercase MD5 hex of a canonical URI: the thumbnail's file name stem.
-[[nodiscard]] std::string thumbnail_key(const std::string& uri);
-
 /// The user's global thumbnail cache root, $XDG_CACHE_HOME/thumbnails (or
 /// $HOME/.cache/thumbnails).
 [[nodiscard]] std::string default_thumbnail_cache_root();
